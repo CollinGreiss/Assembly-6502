@@ -26,24 +26,24 @@
 ; Fast RAM accessible with 1-byte instructions (faster, smaller)
 ; Use this for variables accessed frequently (like gamepad, game variables, pointers)
 .segment "ZEROPAGE"
-gamepad:		.res 1 ; stores the current gamepad values
 
-d_x:			  .res 1 ; x velocity of ball
-d_y:			  .res 1 ; y velocity of ball
+game_state: .res 1
+
+food_position: .res 2
+random_number: .res 2
 
 current_button_state:   .res 1 ; Stores the ID of the currently pressed button (1-8)
 previous_button_state:  .res 1 ; Stores the ID of the previously pressed button
 button_just_pressed:    .res 1 ; Stores the ID of the button that was just pressed
 button_just_released:   .res 1 ; Stores the ID of the button that was just released
 
-p_x: .res 1
-p_y: .res 1
-
+snake_direction_queue: .res 1
 snake_direction: .res 1
 move_snake_delay: .res 1
 
 snake_length: .res 1
-snake_body: .res 32
+snake_size: .res 1
+snake_body: .res 128
 
 ;*****************************************************************
 ; OAM (Object Attribute Memory) ($0200–$02FF)
@@ -212,59 +212,6 @@ remaining_loop:
 
 .proc init_sprites
 
-  set_sprite oam, 0, 10, 0, (SPRITE_PALETTE_0), 10
-  set_sprite oam, 1, 10, 1, (SPRITE_PALETTE_2), 10
-
-  LDA #$00
-
-  STA current_button_state
-  STA previous_button_state
-  STA button_just_pressed
-  STA button_just_released
-
-  LDA #$08
-  STA p_x
-  STA p_y
-
-  LDA #$03
-  STA snake_direction
-
-  LDA #$00
-  STA move_snake_delay
-
-  ; Initialize snake body
-  ; snake_body is an array of 32 bytes, each representing a segment of the snake
-  LDA #$03
-  STA snake_length
-
-  ; Initialize snake body to empty
-  ; Each segment is 2 bytes (x, y) so we need to clear
-  LDX #$00
-  init_snake_body:
-
-    LDA #$00
-    STA snake_body,X
-    INX
-    STA snake_body,X
-    INX
-    CPX #$20
-    BNE init_snake_body
-
-  ; Set initial snake body segments
-  ; The snake starts at (5,5) and extends to the left
-  LDX #$05
-  LDY #$05
-  STX snake_body + 0
-  STY snake_body + 1
-
-  DEX
-  STX snake_body + 2
-  STY snake_body + 3
-
-  DEX
-  STX snake_body + 4
-  STY snake_body + 5
-
   RTS
 .endproc
 
@@ -281,15 +228,6 @@ remaining_loop:
 .proc update_sprites
   ; Update OAM values
 
-  LDA p_x
-  STA oam + 3
-
-  LDA p_y
-  STA oam
-
-  JSR move_snake
-
-
   ; Set OAM address to 0 — required before DMA or manual OAM writes
   LDA #$00
   STA PPU_SPRRAM_ADDRESS    ; $2003 — OAM address register
@@ -303,26 +241,175 @@ remaining_loop:
 
 .endproc
 
+.proc init
+
+  LDA #$00
+
+  STA current_button_state
+  STA previous_button_state
+  STA button_just_pressed
+  STA button_just_released
+
+  STA move_snake_delay
+  STA game_state
+
+  STA random_number
+
+  LDA #$20
+  STA food_position
+  STA food_position + 1
+  STA random_number + 1
+
+  LDA #$03
+  STA snake_direction
+  STA snake_direction_queue
+
+  LDA #$05
+  STA snake_length
+
+  LDA snake_length
+  ASL
+  STA snake_size
+
+  LDA #$01
+  STA game_state
+  RTS
+
+.endproc
+
+.proc update
+
+  INC move_snake_delay
+
+  LDX #$00
+
+  update_snake_oam:
+
+    TXA
+    ASL
+    TAY
+
+    LDA snake_body, X
+    STA oam + 3, Y
+
+    LDA snake_body + 1, X
+    STA oam, Y
+
+    LDA #$01
+    STA oam + 1, Y
+
+    INX
+    INX
+
+    CPX snake_size
+    BNE update_snake_oam
+
+  LDA #$02
+  STA oam + 1
+
+  LDA food_position
+  STA oam
+
+  LDA food_position
+  STA oam + 3
+
+  LDA move_snake_delay
+  CMP #$10
+  BNE skip_update
+
+  INC random_number
+  DEC random_number + 1
+
+  LDA #$00
+  STA move_snake_delay
+  JSR move_snake
+
+  JSR check_lost
+  JSR check_eat
+
+  skip_update:
+   RTS
+
+.endproc
+
+.proc check_eat
+
+  LDA snake_body
+  CMP food_position
+  BNE no_food_hit
+
+  LDA snake_body + 1
+  CMP food_position + 1
+  BNE no_food_hit
+
+  LDA random_number
+  AND #$F8
+  STA food_position
+
+  LDA random_number + 1
+  AND #$F8
+  STA food_position + 1
+
+  INC snake_length
+  INC snake_size
+  INC snake_size
+
+  no_food_hit:
+    RTS
+
+.endproc
+
+.proc check_lost
+
+  LDX #$00
+
+  check_snake_hit:
+
+    INX
+    INX
+
+    CPX snake_size
+    BEQ no_snake_hit
+
+    LDA snake_body
+    CMP snake_body, X
+    BNE check_snake_hit
+
+    LDA snake_body + 1
+    CMP snake_body + 1, X
+    BNE check_snake_hit
+
+    LDA #02
+    STA game_state
+    RTS
+
+  no_snake_hit:
+    RTS
+
+
+.endproc
+
 .proc move_snake
 
-  LDX snake_length
+  LDA snake_direction_queue
+  STA snake_direction
 
-  clear_snake_body:
+  LDX snake_size
+  INX
+  INX
+  move_snake_loop:
 
-    LDY snake_body, X
+    LDA snake_body - 3, X
+    STA snake_body - 1, X
+
+    LDA snake_body - 4, X
+    STA snake_body - 2, X
+
     DEX
     DEX
-    STY snake_body, X
-    INX
 
-    LDY snake_body, X
-    DEX
-    DEX
-    STY snake_body, X
-    INX
-
-    CMP #$02
-    BNE clear_snake_body
+    CPX #$02
+    BNE move_snake_loop
 
   LDA snake_direction
   CMP #$00
@@ -342,30 +429,30 @@ remaining_loop:
   move_snake_right:
 
     CLC
-    LDA p_x
+    LDA snake_body + 0
     ADC #$08
-    STA p_x
+    STA snake_body + 0
     RTS
 
   move_snake_left:
     CLC
-    LDA p_x
+    LDA snake_body + 0
     SBC #$07
-    STA p_x
+    STA snake_body + 0
     RTS
 
   move_snake_up:
-    CLC
-    LDA p_y
-    SBC #$07
-    STA p_y
+    LDA snake_body + 1
+    SEC
+    SBC #$08
+    STA snake_body + 1
     RTS
 
   move_snake_down:
+    LDA snake_body + 1
     CLC
-    LDA p_y
     ADC #$08
-    STA p_y
+    STA snake_body + 1
     RTS
 
 .endproc
@@ -385,7 +472,7 @@ remaining_loop:
   BEQ skip_up_button_just_pressed
 
   LDA #$00
-  STA snake_direction
+  STA snake_direction_queue
 
   skip_up_button_just_pressed:
 
@@ -400,7 +487,7 @@ remaining_loop:
     BEQ skip_down_button_just_pressed
 
     LDA #$01
-    STA snake_direction
+    STA snake_direction_queue
 
   skip_down_button_just_pressed:
 
@@ -415,7 +502,7 @@ remaining_loop:
     BEQ skip_left_button_just_pressed
 
     LDA #$02
-    STA snake_direction
+    STA snake_direction_queue
 
   skip_left_button_just_pressed:
 
@@ -430,7 +517,7 @@ remaining_loop:
     BEQ skip_right_button_just_pressed
 
     LDA #$03
-    STA snake_direction
+    STA snake_direction_queue
 
   skip_right_button_just_pressed:
 
@@ -517,23 +604,40 @@ remaining_loop:
     LDA #(PPUMASK_SHOW_BG | PPUMASK_SHOW_SPRITES | PPUMASK_SHOW_BG_LEFT | PPUMASK_SHOW_SPRITES_LEFT)
     STA PPU_MASK
 
-forever:
+  LDA #$00
+  STA game_state
+
+  forever:
     ; Wait for vertical blank before doing game logic and rendering updates
     wait_for_vblank
-    INC move_snake_delay
 
     ; Update sprite data (DMA transfer to PPU OAM)
     JSR update_sprites
-
     JSR handle_input
 
-    LDA move_snake_delay
-    CMP #$10
-    BNE forever
+    LDA game_state
 
-    LDA #$00
-    STA move_snake_delay
-    JSR move_snake
+    CMP #00
+    BEQ game_state_start
+
+    CMP #01
+    BEQ game_state_running
+
+    CMP #02
+    BEQ game_state_end
+
+    JMP forever
+
+    game_state_start:
+      JSR init
+      JMP forever
+
+    game_state_running:
+      JSR update
+      JMP forever
+
+    game_state_end:
+      JMP forever
 
     ; Infinite loop — keep running frame logic
     JMP forever
@@ -546,7 +650,7 @@ forever:
 ;*****************************************************************
 .segment "CHARS"
 ; Load CHR data
-  .incbin "assets/tiles.chr"
+.incbin "assets/snake.chr"
 
 ;*****************************************************************
 ; Character ROM data (graphics patterns)
@@ -554,10 +658,10 @@ forever:
 .segment "RODATA"
 ; Load palette data
 palette_data:
-  .incbin "assets/palette.pal"
+  .incbin "assets/snake.pal"
 ; Load nametable data
 nametable_data:
-  .incbin "assets/screen.nam"
+  .incbin "assets/snake.nam"
 
 ; Startup segment
 .segment "STARTUP"

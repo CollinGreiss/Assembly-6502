@@ -8669,8 +8669,8 @@
         "Height": 506
       },
       "WindowLocation": {
-        "X": 1360,
-        "Y": 207
+        "X": 1201,
+        "Y": 562
       },
       "WindowIsMaximized": false
     },
@@ -10038,7 +10038,23 @@
     "Items": [
       {
         "RomFile": {
+          "Path": "C:\\Users\\Collin\\Documents\\Game Engine Projects\\projects/build/game.nes",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
           "Path": "C:\\Users\\Collin\\Documents\\Game Engine Projects\\projects/build/Snake.nes",
+          "InnerFile": "",
+          "InnerFileIndex": 0
+        },
+        "PatchFile": null
+      },
+      {
+        "RomFile": {
+          "Path": "C:\\Users\\Collin\\Documents\\Game Engine Projects\\projects/build/controller.nes",
           "InnerFile": "",
           "InnerFileIndex": 0
         },
@@ -10152,8 +10168,8 @@
       "Height": 505
     },
     "WindowLocation": {
-      "X": 483,
-      "Y": 225
+      "X": 97,
+      "Y": 602
     },
     "WindowIsMaximized": false
   },
