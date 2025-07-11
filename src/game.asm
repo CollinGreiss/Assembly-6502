@@ -5,6 +5,7 @@ SPRITE_0_ADDR = oam + 0
 SPRITE_1_ADDR = oam + 4
 SPRITE_2_ADDR = oam + 8
 SPRITE_3_ADDR = oam + 12
+SPRITE_BALL_ADDR = oam + 16
 
 ;*****************************************************************
 ; Define NES cartridge Header
@@ -57,14 +58,15 @@ controller_1_released:  .res 1    ; Check if released
 game_state:             .res 1    ; Current game state
 player_x:               .res 1    ; Player X position
 player_y:               .res 1    ; Player Y position
-player_vel_x:           .res 1    ; Player X velocity
-player_vel_y:           .res 1    ; Player Y velocity
+ball_x:                 .res 1    ; Ball X position
+ball_y:                 .res 1    ; Ball Y position
+ball_dx:                .res 1    ; Ball X velocity
+ball_dy:                .res 1    ; Ball Y velocity
 score:                  .res 1    ; Score low byte
 scroll:                 .res 1    ; Scroll screen
 time:                   .res 1    ; Time (60hz = 60 FPS)
 seconds:                .res 1    ; Seconds
-; Reserve remaining space in this section if needed
-                        .res 07   ; Pad to $30 (optional)
+                        .res 05   ; Padding to align to $30 (optional)
 
 ;*****************************************************************
 ; OAM (Object Attribute Memory) ($0200–$02FF)
@@ -168,8 +170,6 @@ remaining_loop:
     CPY #192                               ; Stop after 192 bytes (960 - 768)
     BNE remaining_loop
 
- 	; draw some text on the screen
-
  	LDA PPU_STATUS ; reset address latch
  	LDA #$20 ; set PPU address to $208A (Row = 4, Column = 10)
  	STA PPU_ADDRESS
@@ -177,6 +177,16 @@ remaining_loop:
  	STA PPU_ADDRESS
 
   ; print text
+  ; draw some text on the screen
+  LDX #0
+text_loop:
+  LDA hello_txt, X
+  STA PPU_VRAM_IO
+  INX
+  CMP #0
+  BEQ :+
+  JMP text_loop
+:
 
   ; Reset scroll registers to 0,0 (needed after VRAM access)
   LDA #$00
@@ -189,20 +199,35 @@ remaining_loop:
 
 .proc init_sprites
   ; set sprite tiles
-  LDA #1
+  LDA #$01
   STA SPRITE_0_ADDR + SPRITE_OFFSET_TILE
-  LDA #2
+  LDA #$02
   STA SPRITE_1_ADDR + SPRITE_OFFSET_TILE
-  LDA #3
+  LDA #$03
   STA SPRITE_2_ADDR + SPRITE_OFFSET_TILE
-  LDA #4
+  LDA #$04
   STA SPRITE_3_ADDR + SPRITE_OFFSET_TILE
 
-  LDA #20
+  LDA #$AA
   STA player_y
 
-  LDA #30
+  LDA #$80
   STA player_x
+
+  ; set ball sprites
+
+  LDA #$06
+  STA SPRITE_BALL_ADDR + SPRITE_OFFSET_TILE
+
+  LDA #$48
+  STA ball_x
+  LDA #40
+  STA ball_y
+
+  LDA #$01
+  STA ball_dx
+  LDA #$03
+  STA ball_dy
 
   RTS
 .endproc
@@ -219,12 +244,19 @@ remaining_loop:
 ;******************************************************************************
 
 .proc update_sprites
+  ; BALL SPRITE POSITIONING
+  LDA ball_y
+  STA SPRITE_BALL_ADDR + SPRITE_OFFSET_Y
+
+  LDA ball_x
+  STA SPRITE_BALL_ADDR + SPRITE_OFFSET_X
+
   ; Update OAM values
   LDA player_x
   STA SPRITE_0_ADDR + SPRITE_OFFSET_X
   STA SPRITE_2_ADDR + SPRITE_OFFSET_X
   CLC
-  ADC #8
+  ADC #$08
   STA SPRITE_1_ADDR + SPRITE_OFFSET_X
   STA SPRITE_3_ADDR + SPRITE_OFFSET_X
 
@@ -232,15 +264,15 @@ remaining_loop:
   STA SPRITE_0_ADDR + SPRITE_OFFSET_Y
   STA SPRITE_1_ADDR + SPRITE_OFFSET_Y
   CLC
-  ADC #8
+  ADC #$08
   STA SPRITE_2_ADDR + SPRITE_OFFSET_Y
   STA SPRITE_3_ADDR + SPRITE_OFFSET_Y
 
-  ;LDA #$00
-  ;STA PPU_SCROLL                         ; Write horizontal scroll
-  ;DEC scroll
+  ;INC scroll
   ;LDA scroll
-  ;STA PPU_SCROLL                         ; Write vertical scroll
+  LDA #$00
+  STA PPU_SCROLL                         ; Write horizontal scroll
+  STA PPU_SCROLL                         ; Write vertical scroll
 
   ; Set OAM address to 0 — required before DMA or manual OAM writes
   LDA #$00
@@ -255,15 +287,60 @@ remaining_loop:
 
 .endproc
 
+.proc update_ball
+
+  ; now move our ball
+ 	lda ball_y ; get the current Y
+	clc
+	adc ball_dy ; add the Y velocity
+ 	sta ball_y ; write the change
+
+ 	cmp #$00 ; have we hit the top border
+ 	bne NOT_HITTOP
+ 		lda #$01 ; reverse direction
+ 		sta ball_dy
+
+NOT_HITTOP:
+ 	lda ball_y
+ 	cmp #$E8 ; have we hit the bottom border
+
+ 	bne NOT_HITBOTTOM
+ 		lda #$FF ; reverse direction (-1)
+ 		sta ball_dy
+
+NOT_HITBOTTOM:
+ 	lda ball_x ; get the current x
+ 	clc
+ 	adc ball_dx	; add the X velocity
+ 	sta ball_x
+
+ 	cmp #0 ; have we hit the left border
+ 	bne NOT_HITLEFT
+ 		lda #$01 ; reverse direction
+ 		sta ball_dx
+
+NOT_HITLEFT:
+ 	lda ball_x
+ 	cmp #$F8 ; have we hit the right border
+
+ 	bne NOT_HITRIGHT
+ 		lda #$FF ; reverse direction (-1)
+ 		sta ball_dx
+
+NOT_HITRIGHT:
+
+.endproc
+
 .proc update_player
+
     LDA controller_1
     AND #PAD_L
     BEQ not_left
       LDA player_x
-      ;DEX
       SEC
       SBC #$01
       STA player_x
+
 not_left:
     LDA controller_1
     AND #PAD_R
@@ -272,6 +349,7 @@ not_left:
       CLC
       ADC #$01
       STA player_x
+
   not_right:
     LDA controller_1
     AND #PAD_U
@@ -280,6 +358,7 @@ not_left:
       SEC
       SBC #$01
       STA player_y
+
   not_up:
     LDA controller_1
     AND #PAD_D
@@ -288,8 +367,10 @@ not_left:
       CLC
       ADC #$01
       STA player_y
+
   not_down:
     RTS                       ; Return to caller
+
 .endproc
 
 ;******************************************************************************
@@ -328,6 +409,7 @@ forever:
     ; Read controller
     JSR read_controller
     JSR update_player
+    JSR update_ball
 
     ; Update sprite data (DMA transfer to PPU OAM)
     JSR update_sprites
@@ -432,7 +514,7 @@ nametable_data:
   .incbin "assets/screens/game.nam"
 
 hello_txt:
-.byte 'H','E','L','L', 'O', 0
+.byte 'H','E','L','L', 'O', ' ', 'W', 'O', 'R', 'L', 'D', 0
 
 ; Startup segment
 .segment "STARTUP"

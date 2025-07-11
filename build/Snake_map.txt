@@ -1,7 +1,7 @@
 Modules list:
 -------------
 Snake.o:
-    CODE              Offs=000000  Size=00024B  Align=00001  Fill=0000
+    CODE              Offs=000000  Size=000279  Align=00001  Fill=0000
     RODATA            Offs=000000  Size=00040C  Align=00001  Fill=0000
     ZEROPAGE          Offs=000000  Size=00008E  Align=00001  Fill=0000
     HEADER            Offs=000000  Size=000008  Align=00001  Fill=0000
@@ -18,8 +18,8 @@ CHARS                 000000  001FFF  002000  00001
 HEADER                000000  000007  000008  00001
 ZEROPAGE              000000  00008D  00008E  00001
 OAM                   000200  0002FF  000100  00001
-CODE                  008000  00824A  00024B  00001
-RODATA                00824B  008656  00040C  00001
+CODE                  008000  008278  000279  00001
+RODATA                008279  008684  00040C  00001
 VECTORS               00FFFA  00FFFF  000006  00001
 
 

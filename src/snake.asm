@@ -226,20 +226,58 @@ remaining_loop:
 ;   - This is called during VBlank or with rendering disabled
 ;******************************************************************************
 .proc update_sprites
-  ; Update OAM values
 
-  ; Set OAM address to 0 — required before DMA or manual OAM writes
+  LDX #$00         ; X = oam index (every 4 bytes)
+  LDY #$00         ; Y = snake_body index (every 2 bytes)
+
+  update_snake_oam:
+
+    LDA snake_body + 1, Y
+    STA oam, X       ; Y pos
+
+    LDA #$01
+    STA oam + 1, X   ; Tile index
+
+    LDA #$00
+    STA oam + 2, X   ; Attributes
+
+    LDA snake_body, Y
+    STA oam + 3, X   ; X pos
+
+    INX
+    INX
+    INX
+    INX
+
+    INY
+    INY
+
+    CPY snake_size
+    BNE update_snake_oam
+
+  ; Add food sprite
+  LDA food_position + 1
+  STA oam, X
+
+  LDA #$02
+  STA oam + 1, X
+
   LDA #$00
-  STA PPU_SPRRAM_ADDRESS    ; $2003 — OAM address register
+  STA oam + 2, X
 
-  ; Start OAM DMA transfer (copies 256 bytes from oam → PPU OAM)
-  ; Write the high byte of the source address (e.g., $02 for $0200)
+  LDA food_position
+  STA oam + 3, X
+
+  ; Upload to OAM
+  LDA #$00
+  STA PPU_SPRRAM_ADDRESS
+
   LDA #>oam
-  STA SPRITE_DMA            ; $4014 — triggers OAM DMA (513–514 cycles, CPU stalled)
+  STA SPRITE_DMA
 
   RTS
-
 .endproc
+
 
 .proc init
 
@@ -281,40 +319,9 @@ remaining_loop:
 
   INC move_snake_delay
 
-  LDX #$00
-
-  update_snake_oam:
-
-    TXA
-    ASL
-    TAY
-
-    LDA snake_body, X
-    STA oam + 3, Y
-
-    LDA snake_body + 1, X
-    STA oam, Y
-
-    LDA #$01
-    STA oam + 1, Y
-
-    INX
-    INX
-
-    CPX snake_size
-    BNE update_snake_oam
-
-  LDA #$02
-  STA oam + 1
-
-  LDA food_position
-  STA oam
-
-  LDA food_position
-  STA oam + 3
-
+  ; Move snake every 16 frames
   LDA move_snake_delay
-  CMP #$10
+  CMP #$20
   BNE skip_update
 
   INC random_number
@@ -342,6 +349,10 @@ remaining_loop:
   CMP food_position + 1
   BNE no_food_hit
 
+  INC snake_length
+  INC snake_size
+  INC snake_size
+
   LDA random_number
   AND #$F8
   STA food_position
@@ -350,11 +361,21 @@ remaining_loop:
   AND #$F8
   STA food_position + 1
 
-  INC snake_length
-  INC snake_size
-  INC snake_size
+  CMP #$F8
+  BEQ food_out_of_bounds
+
+  CMP #$F0
+  BEQ food_out_of_bounds
+  RTS
 
   no_food_hit:
+    RTS
+
+  food_out_of_bounds:
+
+    LDA #$E8
+    STA food_position + 1
+
     RTS
 
 .endproc
@@ -446,6 +467,12 @@ remaining_loop:
     SEC
     SBC #$08
     STA snake_body + 1
+
+    CMP #$F8
+    BNE exit_move_snake
+
+    LDA #$E8
+    STA snake_body + 1
     RTS
 
   move_snake_down:
@@ -453,6 +480,15 @@ remaining_loop:
     CLC
     ADC #$08
     STA snake_body + 1
+
+    CMP #$F0
+    BNE exit_move_snake
+
+    LDA #$00
+    STA snake_body + 1
+    RTS
+
+  exit_move_snake:
     RTS
 
 .endproc
@@ -650,7 +686,7 @@ remaining_loop:
 ;*****************************************************************
 .segment "CHARS"
 ; Load CHR data
-.incbin "assets/snake.chr"
+.incbin "assets/tiles/snake.chr"
 
 ;*****************************************************************
 ; Character ROM data (graphics patterns)
@@ -658,10 +694,10 @@ remaining_loop:
 .segment "RODATA"
 ; Load palette data
 palette_data:
-  .incbin "assets/snake.pal"
+  .incbin "assets/palettes/snake.pal"
 ; Load nametable data
 nametable_data:
-  .incbin "assets/snake.nam"
+  .incbin "assets/screens/snake.nam"
 
 ; Startup segment
 .segment "STARTUP"
