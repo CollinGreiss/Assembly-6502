@@ -1,1 +1,4 @@
-builds/*
+build/*
+
+mesen/*
+!mesen/mesen.exe
